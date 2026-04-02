@@ -81,20 +81,20 @@ func (r *RedisClient) GetTaskStatusKey(taskID string) string {
 	return fmt.Sprintf("task:status:%s", taskID)
 }
 
-// GetNodeStatusKey 获取节点状态的Key
-// 格式: node:status:{node_name}
-// 参数: nodeName - 节点名称
+// GetNodeInfoKey 获取节点信息的Key
+// 格式: WF:NODE:INFO:{node_name}:{instance_id}
+// 参数: nodeName - 节点名称, instanceID - 实例ID
 // 返回: 完整的Redis Key字符串
-func (r *RedisClient) GetNodeStatusKey(nodeName string) string {
-	return fmt.Sprintf("node:status:%s", nodeName)
+func (r *RedisClient) GetNodeInfoKey(nodeName, instanceID string) string {
+	return fmt.Sprintf("WF:NODE:INFO:%s:%s", nodeName, instanceID)
 }
 
-// GetNodeHeartbeatKey 获取节点心跳的Key
-// 格式: heartbeat:node:{node_name}
-// 参数: nodeName - 节点名称
+// GetNodeStatusKey 获取节点状态的Key
+// 格式: WF:NODE:STATUS:{node_name}:{instance_id}
+// 参数: nodeName - 节点名称, instanceID - 实例ID
 // 返回: 完整的Redis Key字符串
-func (r *RedisClient) GetNodeHeartbeatKey(nodeName string) string {
-	return fmt.Sprintf("heartbeat:node:%s", nodeName)
+func (r *RedisClient) GetNodeStatusKey(nodeName, instanceID string) string {
+	return fmt.Sprintf("WF:NODE:STATUS:%s:%s", nodeName, instanceID)
 }
 
 // GetWorkflowStatusKey 获取工作流状态的Key
@@ -248,49 +248,49 @@ func (r *RedisClient) GetTaskStatus(ctx context.Context, taskID string) (map[str
 // ============================================================================
 
 // UpdateNodeHeartbeat 更新节点心跳信息
-// 同时更新心跳Hash和状态Hash，并递增版本号
+// 同时更新INFO Hash和STATUS Hash
 // 参数:
 //   - ctx: 上下文对象
 //   - nodeInfo: 节点信息
 //
 // 返回: 操作失败时返回错误
 func (r *RedisClient) UpdateNodeHeartbeat(ctx context.Context, nodeInfo *model.NodeInfo) error {
-	// 获取相关Key
-	heartbeatKey := r.GetNodeHeartbeatKey(nodeInfo.NodeName)
-	statusKey := r.GetNodeStatusKey(nodeInfo.NodeName)
-	versionKey := r.GetNodeVersionKey(nodeInfo.NodeName)
+	if nodeInfo == nil || nodeInfo.InstanceID == "" {
+		return fmt.Errorf("nodeInfo or instanceID is nil")
+	}
 
-	// 获取当前时间戳
+	infoKey := r.GetNodeInfoKey(nodeInfo.NodeName, nodeInfo.InstanceID)
+	statusKey := r.GetNodeStatusKey(nodeInfo.NodeName, nodeInfo.InstanceID)
+
 	now := time.Now().UnixMilli()
 
-	// 更新心跳信息到Hash
-	if err := r.client.HSet(ctx, heartbeatKey,
+	capabilitiesJSON, _ := json.Marshal(nodeInfo.Capabilities)
+
+	pipe := r.client.Pipeline()
+
+	pipe.HSet(ctx, infoKey,
 		"node_name", nodeInfo.NodeName,
 		"node_type", nodeInfo.NodeType,
-		"status", nodeInfo.Status,
-		"last_heartbeat", now,
-		"current_load", nodeInfo.CurrentLoad,
-		"version", nodeInfo.Version,
-	).Err(); err != nil {
-		return fmt.Errorf("failed to update heartbeat: %w", err)
-	}
-
-	// 设置心跳2分钟过期(用于检测节点离线)
-	if err := r.client.Expire(ctx, heartbeatKey, 120*time.Second).Err(); err != nil {
-		return fmt.Errorf("failed to set heartbeat expiry: %w", err)
-	}
-
-	// 更新节点状态
-	if err := r.client.HSet(ctx, statusKey,
-		"status", nodeInfo.Status,
-		"current_load", nodeInfo.CurrentLoad,
+		"host", nodeInfo.Host,
+		"port", nodeInfo.Port,
+		"capabilities", string(capabilitiesJSON),
 		"max_capacity", nodeInfo.MaxCapacity,
-	).Err(); err != nil {
-		return fmt.Errorf("failed to update node status: %w", err)
-	}
+		"version", nodeInfo.Version,
+		"registered_at", nodeInfo.RegisteredAt,
+	)
 
-	// 递增版本号，用于通知订阅者状态已更新
-	r.client.Incr(ctx, versionKey)
+	pipe.HSet(ctx, statusKey,
+		"status", nodeInfo.Status,
+		"current_load", nodeInfo.CurrentLoad,
+		"last_heartbeat", now,
+	)
+
+	pipe.Expire(ctx, statusKey, 300*time.Second)
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update node heartbeat: %w", err)
+	}
 
 	return nil
 }
@@ -299,12 +299,13 @@ func (r *RedisClient) UpdateNodeHeartbeat(ctx context.Context, nodeInfo *model.N
 // 参数:
 //   - ctx: 上下文对象
 //   - nodeName: 节点名称
+//   - instanceID: 实例ID
 //
 // 返回:
 //   - map[string]string: 节点状态数据
 //   - error: 操作失败时返回错误
-func (r *RedisClient) GetNodeStatus(ctx context.Context, nodeName string) (map[string]string, error) {
-	statusKey := r.GetNodeStatusKey(nodeName)
+func (r *RedisClient) GetNodeStatus(ctx context.Context, nodeName, instanceID string) (map[string]string, error) {
+	statusKey := r.GetNodeStatusKey(nodeName, instanceID)
 	result, err := r.client.HGetAll(ctx, statusKey).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node status: %w", err)
@@ -312,71 +313,89 @@ func (r *RedisClient) GetNodeStatus(ctx context.Context, nodeName string) (map[s
 	return result, nil
 }
 
+// GetNodeInfo 获取节点信息
+// 参数:
+//   - ctx: 上下文对象
+//   - nodeName: 节点名称
+//   - instanceID: 实例ID
+//
+// 返回:
+//   - map[string]string: 节点信息数据
+//   - error: 操作失败时返回错误
+func (r *RedisClient) GetNodeInfo(ctx context.Context, nodeName, instanceID string) (map[string]string, error) {
+	infoKey := r.GetNodeInfoKey(nodeName, instanceID)
+	result, err := r.client.HGetAll(ctx, infoKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node info: %w", err)
+	}
+	return result, nil
+}
+
 // RegisterNode 注册节点
-// 将节点信息写入Redis，包括心跳Hash和状态Hash
+// 将节点信息写入Redis，包括INFO Hash和STATUS Hash
 // 参数:
 //   - ctx: 上下文对象
 //   - nodeInfo: 节点信息
 //
 // 返回: 操作失败时返回错误
 func (r *RedisClient) RegisterNode(ctx context.Context, nodeInfo *model.NodeInfo) error {
-	// 获取相关Key
-	heartbeatKey := r.GetNodeHeartbeatKey(nodeInfo.NodeName)
-	statusKey := r.GetNodeStatusKey(nodeInfo.NodeName)
+	if nodeInfo == nil || nodeInfo.InstanceID == "" {
+		return fmt.Errorf("nodeInfo or instanceID is nil")
+	}
 
-	// 获取当前时间戳
+	infoKey := r.GetNodeInfoKey(nodeInfo.NodeName, nodeInfo.InstanceID)
+	statusKey := r.GetNodeStatusKey(nodeInfo.NodeName, nodeInfo.InstanceID)
+
 	now := time.Now().UnixMilli()
 
-	// 序列化节点能力列表
+	if nodeInfo.RegisteredAt == 0 {
+		nodeInfo.RegisteredAt = now
+	}
+
 	capabilitiesJSON, _ := json.Marshal(nodeInfo.Capabilities)
 
-	// 写入心跳信息
-	if err := r.client.HSet(ctx, heartbeatKey,
+	pipe := r.client.Pipeline()
+
+	pipe.HSet(ctx, infoKey,
 		"node_name", nodeInfo.NodeName,
 		"node_type", nodeInfo.NodeType,
 		"host", nodeInfo.Host,
 		"port", nodeInfo.Port,
-		"status", nodeInfo.Status,
 		"capabilities", string(capabilitiesJSON),
-		"current_load", nodeInfo.CurrentLoad,
 		"max_capacity", nodeInfo.MaxCapacity,
 		"version", nodeInfo.Version,
-		"registered_at", now,
-		"last_heartbeat", now,
-	).Err(); err != nil {
-		return fmt.Errorf("failed to register node: %w", err)
-	}
+		"registered_at", nodeInfo.RegisteredAt,
+	)
 
-	// 设置2分钟过期
-	if err := r.client.Expire(ctx, heartbeatKey, 120*time.Second).Err(); err != nil {
-		return fmt.Errorf("failed to set expiry: %w", err)
-	}
-
-	// 写入节点状态
-	if err := r.client.HSet(ctx, statusKey,
+	pipe.HSet(ctx, statusKey,
 		"status", nodeInfo.Status,
 		"current_load", nodeInfo.CurrentLoad,
-		"max_capacity", nodeInfo.MaxCapacity,
-	).Err(); err != nil {
-		return fmt.Errorf("failed to set node status: %w", err)
+		"last_heartbeat", now,
+	)
+
+	pipe.Expire(ctx, statusKey, 300*time.Second)
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to register node: %w", err)
 	}
 
 	return nil
 }
 
 // UnregisterNode 注销节点
-// 删除节点的心跳Hash和状态Hash
+// 删除节点的INFO Hash和STATUS Hash
 // 参数:
 //   - ctx: 上下文对象
 //   - nodeName: 节点名称
+//   - instanceID: 实例ID
 //
 // 返回: 操作失败时返回错误
-func (r *RedisClient) UnregisterNode(ctx context.Context, nodeName string) error {
-	heartbeatKey := r.GetNodeHeartbeatKey(nodeName)
-	statusKey := r.GetNodeStatusKey(nodeName)
+func (r *RedisClient) UnregisterNode(ctx context.Context, nodeName, instanceID string) error {
+	infoKey := r.GetNodeInfoKey(nodeName, instanceID)
+	statusKey := r.GetNodeStatusKey(nodeName, instanceID)
 
-	// 删除相关Key
-	if err := r.client.Del(ctx, heartbeatKey, statusKey).Err(); err != nil {
+	if err := r.client.Del(ctx, infoKey, statusKey).Err(); err != nil {
 		return fmt.Errorf("failed to unregister node: %w", err)
 	}
 

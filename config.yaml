@@ -1,0 +1,51 @@
+# =============================================================================
+# 敏感信息警告
+# =============================================================================
+# 注意：此配置文件包含敏感信息，请勿将实际运行环境的配置文件提交到版本控制
+# 需要修改的敏感字段：
+#   - redis.password: Redis连接密码
+#   - tablestore.access_key_id: 阿里云访问密钥ID
+#   - tablestore.access_key_secret: 阿里云访问密钥密码
+#   - tablestore.endpoint: TableStore服务端点
+#   - oss.access_key_id: 阿里云OSS访问密钥ID
+#   - oss.access_key_secret: 阿里云OSS访问密钥密码
+#   - oss.endpoint: OSS服务端点
+# 建议：在生产环境中使用环境变量或密钥管理服务(KMS)来管理敏感信息
+# =============================================================================
+
+node_name: "data-processor-001"
+node_type: "data_processor"
+host: "192.168.1.100"
+port: 8080
+
+capabilities:
+  - "data_clean"
+  - "data_transform"
+  - "data_validate"
+
+max_capacity: 10
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+tablestore:
+  endpoint: "https://your-instance.cn-hangzhou.ots.aliyuncs.com"
+  access_key_id: "your-access-key-id"
+  access_key_secret: "your-access-key-secret"
+  instance_name: "your-instance-name"
+  table_name: "worker_node"
+
+# OSS配置（可选，用于文件存储）
+oss:
+  endpoint: "https://your-bucket.oss-cn-hangzhou.aliyuncs.com"
+  access_key_id: "your-oss-access-key-id"
+  access_key_secret: "your-oss-access-key-secret"
+  bucket_name: "your-bucket-name"
+
+worker:
+  poll_interval: 5
+  heartbeat_interval: 30
+  max_retries: 3
+  batch_size: 1

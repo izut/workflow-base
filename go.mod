@@ -1,8 +1,9 @@
 module github.com/izut/workflow-base
 
-go 1.22
+go 1.26
 
 require (
+	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.4.1
 	github.com/aliyun/aliyun-tablestore-go-sdk v1.9.1
 	github.com/redis/go-redis/v9 v9.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -14,4 +15,5 @@ require (
 	github.com/golang/protobuf v1.3.2 // indirect
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
+	golang.org/x/time v0.4.0 // indirect
 )

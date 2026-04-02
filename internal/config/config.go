@@ -109,6 +109,14 @@ func (c *ConfigLoader) LoadFromEnv() (*model.WorkerConfig, error) {
 			TableName:       getEnvOrDefault("TABLESTORE_TABLE_NAME", "worker_node"), // 表名称
 		},
 
+		// OSS配置
+		OSS: model.OSSConfig{
+			Endpoint:        getEnvOrDefault("OSS_ENDPOINT", ""),          // OSS端点
+			AccessKeyID:     getEnvOrDefault("OSS_ACCESS_KEY_ID", ""),     // AccessKey ID
+			AccessKeySecret: getEnvOrDefault("OSS_ACCESS_KEY_SECRET", ""), // AccessKey Secret
+			BucketName:      getEnvOrDefault("OSS_BUCKET_NAME", ""),       // 存储桶名称
+		},
+
 		// 工作线程配置
 		Worker: model.WorkerSettings{
 			PollInterval:      time.Duration(getEnvDurationOrDefault("WORKER_POLL_INTERVAL", 5)),       // 任务拉取间隔(秒)

@@ -1,6 +1,13 @@
 package model
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+func generateInstanceID() string {
+	return fmt.Sprintf("%d-%d", time.Now().UnixMilli(), time.Now().Nanosecond()%1000)
+}
 
 // ============================================================================
 // 任务状态常量定义
@@ -51,6 +58,7 @@ type Task struct {
 // 节点注册到工作流控制中心，用于接收任务
 type NodeInfo struct {
 	NodeName      string   `json:"node_name"`      // 节点唯一名称
+	InstanceID    string   `json:"instance_id"`    // 实例唯一ID
 	NodeType      string   `json:"node_type"`      // 节点类型
 	Host          string   `json:"host"`           // 节点主机地址
 	Port          int      `json:"port"`           // 节点服务端口
@@ -64,7 +72,7 @@ type NodeInfo struct {
 }
 
 // WorkerConfig 工作节点配置结构
-// 包含节点自身配置、Redis配置、TableStore配置和工作线程配置
+// 包含节点自身配置、Redis配置、TableStore配置、OSS配置和工作线程配置
 type WorkerConfig struct {
 	NodeName     string           `yaml:"node_name"`    // 节点唯一名称
 	NodeType     string           `yaml:"node_type"`    // 节点类型
@@ -74,6 +82,7 @@ type WorkerConfig struct {
 	MaxCapacity  int              `yaml:"max_capacity"` // 最大容量
 	Redis        RedisConfig      `yaml:"redis"`        // Redis配置
 	TableStore   TableStoreConfig `yaml:"tablestore"`   // TableStore配置
+	OSS          OSSConfig        `yaml:"oss"`          // OSS配置
 	Worker       WorkerSettings   `yaml:"worker"`       // 工作线程配置
 }
 
@@ -91,6 +100,14 @@ type TableStoreConfig struct {
 	AccessKeySecret string `yaml:"access_key_secret"` // 访问密钥密
 	InstanceName    string `yaml:"instance_name"`     // 实例名称
 	TableName       string `yaml:"table_name"`        // 表名称
+}
+
+// OSSConfig 阿里云OSS配置
+type OSSConfig struct {
+	Endpoint        string `yaml:"endpoint"`          // OSS服务端点
+	AccessKeyID     string `yaml:"access_key_id"`     // 访问密钥ID
+	AccessKeySecret string `yaml:"access_key_secret"` // 访问密钥密码
+	BucketName      string `yaml:"bucket_name"`       // 存储桶名称
 }
 
 // WorkerSettings 工作线程运行参数配置
@@ -174,8 +191,10 @@ func (t *Task) UpdateProgress(progress float64, output map[string]interface{}) {
 //
 // 返回: 初始化的NodeInfo指针
 func NewNodeInfo(name, nodeType, host string, port int, capabilities []string, maxCapacity int, version string) *NodeInfo {
+	instanceID := generateInstanceID()
 	return &NodeInfo{
 		NodeName:      name,                   // 节点名称
+		InstanceID:    instanceID,             // 实例唯一ID
 		NodeType:      nodeType,               // 节点类型
 		Host:          host,                   // 主机地址
 		Port:          port,                   // 端口号

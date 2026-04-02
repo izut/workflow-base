@@ -17,15 +17,15 @@ import (
 // Worker 工作节点核心结构体
 // 负责从任务队列获取任务、执行任务、发送心跳等功能
 type Worker struct {
-	nodeInfo    *model.NodeInfo        // 节点信息
-	redisClient *client.RedisClient   // Redis客户端
+	nodeInfo    *model.NodeInfo          // 节点信息
+	redisClient *client.RedisClient      // Redis客户端
 	tsClient    *client.TableStoreClient // TableStore客户端(可选)
-	config      *model.WorkerConfig   // 节点配置
-	taskHandler TaskHandler           // 任务处理器
-	stopChan    chan struct{}         // 停止信号通道
-	wg          sync.WaitGroup        // 等待组，用于等待协程结束
-	isRunning   bool                  // 运行状态标志
-	mu          sync.Mutex            // 互斥锁，保护运行状态
+	config      *model.WorkerConfig      // 节点配置
+	taskHandler TaskHandler              // 任务处理器
+	stopChan    chan struct{}            // 停止信号通道
+	wg          sync.WaitGroup           // 等待组，用于等待协程结束
+	isRunning   bool                     // 运行状态标志
+	mu          sync.Mutex               // 互斥锁，保护运行状态
 }
 
 // ============================================================================
@@ -137,7 +137,7 @@ func (w *Worker) Stop() error {
 	ctx := context.Background()
 
 	// 从Redis注销节点
-	if err := w.redisClient.UnregisterNode(ctx, w.nodeInfo.NodeName); err != nil {
+	if err := w.redisClient.UnregisterNode(ctx, w.nodeInfo.NodeName, w.nodeInfo.InstanceID); err != nil {
 		log.Printf("Failed to unregister node from Redis: %v", err)
 	}
 
@@ -326,9 +326,9 @@ func (w *Worker) GetStatus() map[string]interface{} {
 	return map[string]interface{}{
 		"node_name":    w.nodeInfo.NodeName,    // 节点名称
 		"node_type":    w.nodeInfo.NodeType,    // 节点类型
-		"status":       w.nodeInfo.Status,       // 节点状态
-		"current_load": w.nodeInfo.CurrentLoad,  // 当前负载
-		"max_capacity": w.nodeInfo.MaxCapacity,  // 最大容量
+		"status":       w.nodeInfo.Status,      // 节点状态
+		"current_load": w.nodeInfo.CurrentLoad, // 当前负载
+		"max_capacity": w.nodeInfo.MaxCapacity, // 最大容量
 		"queue_length": queueLength,            // 队列积压长度
 		"is_running":   w.isRunning,            // 是否运行中
 	}
